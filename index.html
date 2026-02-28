@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>net-viz</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      background: #000;
+      overflow: hidden;
+      font-family: 'Courier New', Courier, monospace;
+    }
+
+    #app {
+      width: 100vw;
+      height: 100vh;
+      position: relative;
+    }
+
+    canvas {
+      display: block;
+      width: 100% !important;
+      height: 100% !important;
+    }
+
+    #hud {
+      position: fixed;
+      top: 16px;
+      left: 16px;
+      color: #00ffee;
+      font-size: 11px;
+      line-height: 1.8;
+      pointer-events: none;
+      text-shadow: 0 0 12px #00ffeeaa;
+      z-index: 10;
+    }
+
+    #hud h1 {
+      font-size: 15px;
+      font-weight: normal;
+      letter-spacing: 0.4em;
+      margin-bottom: 6px;
+      text-shadow: 0 0 20px #00ffee;
+    }
+
+    #stats {
+      opacity: 0.6;
+    }
+
+    /* lil-gui theme overrides */
+    .lil-gui {
+      --background-color: rgba(0, 6, 22, 0.88) !important;
+      --text-color: #88ddff !important;
+      --title-background-color: rgba(0, 30, 80, 0.92) !important;
+      --title-text-color: #00ffee !important;
+      --widget-color: rgba(0, 40, 100, 0.6) !important;
+      --hover-color: rgba(0, 60, 140, 0.7) !important;
+      --focus-color: rgba(0, 80, 180, 0.8) !important;
+      --number-color: #aaeeff !important;
+      --string-color: #aaffcc !important;
+      --font-family: 'Courier New', Courier, monospace !important;
+      --font-size: 11px !important;
+      --input-font-size: 11px !important;
+      border: 1px solid rgba(0, 200, 255, 0.15) !important;
+    }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <canvas id="canvas"></canvas>
+    <div id="hud">
+      <h1>NET·VIZ</h1>
+      <div id="stats"></div>
+    </div>
+  </div>
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>
