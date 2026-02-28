@@ -3,6 +3,7 @@ import { NeuralNetwork } from './network/NeuralNetwork.js';
 import { NetworkVisualizer } from './viz/NetworkVisualizer.js';
 import { StimulusController } from './stimulus/StimulusController.js';
 import { UIController } from './ui/UIController.js';
+import { STLLayout } from './viz/STLLayout.js';
 
 // ─── Default network topology ────────────────────────────────────────────────
 const DEFAULT_CONFIG = [
@@ -18,6 +19,7 @@ const canvas = document.getElementById('canvas');
 const network    = new NeuralNetwork(DEFAULT_CONFIG);
 const visualizer = new NetworkVisualizer(canvas);
 const stimulus   = new StimulusController(DEFAULT_CONFIG[0].size);
+const stlLayout  = new STLLayout();
 
 // Build initial visualization
 visualizer.buildFromNetwork(network);
@@ -30,11 +32,18 @@ const ui = new UIController({
   stimulus,
   onReconfigure(configs) {
     network.configure(configs);
-    visualizer.buildFromNetwork(network);
+    if (stlLayout.isLoaded) {
+      // Re-place neurons in updated topology inside the same mesh
+      stlLayout.initNeurons(network);
+    } else {
+      visualizer.buildFromNetwork(network);
+    }
     visualizer.syncWeights();
     stimulus.setInputSize(configs[0].size);
   },
 });
+
+ui.addSTLPanel(stlLayout);
 
 // ─── HUD helpers ─────────────────────────────────────────────────────────────
 const statsEl = document.getElementById('stats');
@@ -49,12 +58,16 @@ function updateHUD(elapsed) {
     frameCount = 0;
     fpsTime = elapsed;
   }
+  const energyStr = stlLayout.isLoaded
+    ? `  |  energy ${stlLayout.energy.toFixed(3)}`
+    : '';
   statsEl.textContent =
     `${fps} fps  |  ` +
     `${network.numLayers} layers  |  ` +
     `${network.getTotalNeurons()} neurons  |  ` +
     `${network.getTotalConnections()} weights  |  ` +
-    `${visualizer._particles.length} particles`;
+    `${visualizer._particles.length} particles` +
+    energyStr;
 }
 
 // ─── Animation loop ───────────────────────────────────────────────────────────

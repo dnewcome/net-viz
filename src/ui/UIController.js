@@ -40,6 +40,7 @@ export class UIController {
     this._buildStimulusPanel();
     this._buildTrainingPanel();
     this._buildVizPanel();
+    if (this._stlLayout) this._buildSTLPanel();
   }
 
   _buildArchPanel() {
@@ -155,6 +156,101 @@ export class UIController {
     folder.add(bp, 'threshold', 0, 1, 0.01).name('Bloom Threshold');
 
     folder.close();
+  }
+
+  // ─── STL Layout panel ────────────────────────────────────────────────────────
+
+  addSTLPanel(layout) {
+    this._stlLayout = layout;
+    this._setupSTLCallbacks(layout);
+    this._buildSTLPanel();
+  }
+
+  /** Wire layout callbacks — called once; references class fields for late binding. */
+  _setupSTLCallbacks(layout) {
+    layout.onProgress = (pct, label) => {
+      if (this._stlState) {
+        this._stlState.status = label;
+        this._stlStatusCtrl?.updateDisplay();
+      }
+    };
+
+    layout.onReady = (geometry) => {
+      this.visualizer.showSTLMesh(geometry);
+      layout.initNeurons(this.network);
+      layout.start();
+      if (this._stlState) {
+        this._stlState.status = 'Ready';
+        this._stlStatusCtrl?.updateDisplay();
+      }
+      this._stlStartCtrl?.enable();
+      this._stlStopCtrl?.enable();
+    };
+
+    layout.onTick = (positions) => {
+      this.visualizer.setPositions(positions);
+    };
+  }
+
+  /** Build (or rebuild) the STL Layout GUI folder. */
+  _buildSTLPanel() {
+    const layout = this._stlLayout;
+
+    // Persist status across GUI rebuilds
+    if (!this._stlState) this._stlState = { status: 'No file loaded' };
+
+    // Clean up old hidden file input from previous build
+    if (this._stlFileInput) {
+      document.body.removeChild(this._stlFileInput);
+      this._stlFileInput = null;
+    }
+
+    const folder = this.gui.addFolder('STL Layout');
+    const state  = this._stlState;
+
+    // Hidden file input element
+    const fileInput = document.createElement('input');
+    fileInput.type = 'file';
+    fileInput.accept = '.stl';
+    fileInput.style.display = 'none';
+    document.body.appendChild(fileInput);
+    this._stlFileInput = fileInput;
+
+    fileInput.addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      state.status = 'Loading…';
+      this._stlStatusCtrl?.updateDisplay();
+      layout.loadFile(file);
+      fileInput.value = '';
+    });
+
+    folder.add({ load: () => fileInput.click() }, 'load').name('Load STL…');
+
+    this._stlStatusCtrl = folder.add(state, 'status').name('Status').disable();
+
+    this._stlStartCtrl = folder.add({ start: () => { if (layout.isLoaded) layout.start(); } }, 'start').name('▶ Start');
+    this._stlStopCtrl  = folder.add({ stop:  () => layout.stop() },  'stop').name('■ Stop');
+
+    if (!layout.isLoaded) {
+      this._stlStartCtrl.disable();
+      this._stlStopCtrl.disable();
+    }
+
+    folder.add(layout, 'kRepel',    0.1, 3,    0.01 ).name('Repulsion');
+    folder.add(layout, 'kLayer',    0,   0.2,  0.002).name('Layer Guidance');
+    folder.add(layout, 'kBoundary', 0,   2,    0.02 ).name('Boundary');
+    folder.add(layout, 'damping',   0.5, 0.99, 0.01 ).name('Damping');
+
+    folder.add({
+      reset: () => {
+        layout.stop();
+        this.visualizer.hideSTLMesh();
+        this.visualizer.buildFromNetwork(this.network);
+      },
+    }, 'reset').name('Reset to Grid');
+
+    folder.open();
   }
 
   // ─── Internal ────────────────────────────────────────────────────────────────

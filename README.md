@@ -19,7 +19,7 @@ The aesthetic draws from:
 - **Cyberpunk data aesthetics** — overbright bloom, dark void backgrounds, signal particles racing along glowing wires
 - **Interactive art installations** — a system you can poke and watch respond, where the "output" is the visualization itself rather than a prediction
 
-The longer-term vision: feed the network audio, motion, or sensor data as stimuli, arrange its layers to fit the surface of a 3D-printed skull or coral shape (via STL mesh), and let it run as a physical installation — a brain that lives in a body.
+The longer-term vision: feed the network audio, motion, or sensor data as stimuli, arrange its layers to fill the interior of a 3D-printed skull or coral shape (now possible — see STL Layout below), and let it run as a physical installation — a brain that lives in a body.
 
 ---
 
@@ -94,6 +94,33 @@ There is no target output. Reward and punish are signals you supply based on wha
 
 Camera is controlled with **orbit controls**: drag to rotate, scroll to zoom, right-drag to pan.
 
+### STL Layout
+
+Import any watertight STL mesh and use it as a volumetric container for the neurons. A particle-physics simulation pushes neurons apart, keeps them inside the mesh, and maintains loose layer ordering along the mesh's longest axis — so the network organically fills the shape of any 3D form.
+
+**Workflow:**
+
+1. Click **Load STL…** and pick any `.stl` file (binary or ASCII).
+2. The mesh is normalized to a 10-unit bounding box and voxelized into a 32³ grid. Watch the **Status** field for progress.
+3. Once ready, neurons scatter inside the volume and the simulation starts automatically.
+4. Adjust the physics sliders live — changes take effect immediately.
+5. Click **Reset to Grid** to return to the standard flat-layer layout at any time.
+
+Reconfiguring the network topology (Architecture panel → Apply) while an STL is loaded will re-scatter the neurons inside the same mesh, preserving the shape.
+
+| Control | Description |
+|---|---|
+| **Load STL…** | Open a `.stl` file (binary or ASCII) |
+| **Status** | Voxelization progress and current state |
+| **▶ Start / ■ Stop** | Toggle the force simulation |
+| **Repulsion** | Strength of neuron-to-neuron push-apart force |
+| **Layer Guidance** | Pull strength toward each layer's target region along the principal axis |
+| **Boundary** | Strength of the inward push from the mesh surface |
+| **Damping** | Velocity damping — lower values = more jitter, higher = quicker settling |
+| **Reset to Grid** | Stop simulation, remove mesh overlay, restore flat-layer layout |
+
+The HUD adds an **energy** readout when the simulation is running — a mean kinetic energy value that falls toward zero as neurons settle.
+
 ---
 
 ## How It Works
@@ -124,6 +151,21 @@ weight[i,j] += lr * reward * eligibility[i,j]
 
 Weights are soft-clamped to `[−4, 4]` to prevent divergence.
 
+### STL Layout (`src/viz/STLLayout.js`)
+
+Loads an STL file, normalizes it, voxelizes the interior, and runs a force-directed simulation to position neurons inside the volume.
+
+**Voxelization** — for each of the 32² scanlines (one per `(y, z)` grid pair), a ray is cast along the +X axis using the Möller–Trumbore triangle intersection algorithm. Intersection X-coordinates are sorted; odd-paired spans are marked inside. The result is a 32³ `Uint8Array` grid. Processing yields to the event loop every 4 rows so the UI stays responsive.
+
+**Force simulation** — runs at 3 sub-steps per frame with a fixed `dt`:
+
+1. **Repulsion** — all-pairs `K / dist²` force keeps neurons from collapsing together
+2. **Layer guidance** — each neuron is gently pulled toward its layer's target point along the principal axis, loosely preserving the input→output depth ordering
+3. **Boundary** — for each voxel in the neuron's 5×5×5 neighborhood that lies outside the mesh, a proportional inward push is applied
+4. **Integration** — semi-implicit Euler with velocity damping; any neuron that escapes the mesh is snapped back to its previous position with a velocity bounce
+
+The simulation fires `onTick(positions)` each frame, which the visualizer uses to update GPU buffers in place.
+
 ### Visualization (`src/viz/NetworkVisualizer.js`)
 
 Built with [Three.js](https://threejs.org). Everything runs in a single WebGL render pass followed by an `UnrealBloomPass` post-process that makes bright pixels glow.
@@ -134,7 +176,7 @@ Built with [Three.js](https://threejs.org). Everything runs in a single WebGL re
 
 **Particles** — A second `THREE.InstancedMesh` (pool of 3000 spheres). After each forward pass, particles are spawned on connections where both the pre-synaptic and post-synaptic neurons are active and the weight is non-trivial. Each particle travels from source to destination over ~0.5 seconds, scaling up mid-path and fading at the endpoints. Positive-weight particles are warm white; negative-weight particles are pink.
 
-**Layout** — Layers are spaced along the Z axis. Neurons within each layer are arranged in a square grid centered at the origin for that layer's Z plane. The camera starts looking slightly down the Z axis so the full depth of the network is visible.
+**Layout** — Default: layers are spaced along the Z axis, neurons arranged in a square grid per layer. When an STL mesh is loaded, neuron positions are replaced by the force simulation output; GPU buffers (instance matrices and line segment endpoints) are updated in place each tick via `setPositions()` / `_syncPositionBuffers()`. The STL mesh itself is rendered as a semi-transparent shell + wireframe overlay using `showSTLMesh()` / `hideSTLMesh()`.
 
 ### Stimulus (`src/stimulus/StimulusController.js`)
 
@@ -170,23 +212,23 @@ net-viz/
 ├── index.html                       # Full-screen canvas + HUD overlay
 ├── package.json
 └── src/
-    ├── main.js                      # Entry point, animation loop
+    ├── main.js                      # Entry point, animation loop, STL wiring
     ├── network/
     │   ├── NeuralNetwork.js         # Forward pass, eligibility traces, reinforce
     │   └── activations.js           # sigmoid / relu / tanh / linear + viz normalizers
     ├── viz/
-    │   └── NetworkVisualizer.js     # Three.js scene, bloom, neuron/connection/particle meshes
+    │   ├── NetworkVisualizer.js     # Three.js scene, bloom, neuron/connection/particle meshes
+    │   └── STLLayout.js             # STL loader, 32³ voxelizer, force-directed neuron sim
     ├── stimulus/
     │   └── StimulusController.js    # Sine, noise, and manual input generators
     └── ui/
-        └── UIController.js          # lil-gui panels, layer editor
+        └── UIController.js          # lil-gui panels, layer editor, STL panel
 ```
 
 ---
 
 ## Planned Features
 
-- **STL mesh layout** — import a 3D mesh and distribute neuron positions across its surface, giving the network the shape of a skull, coral, hand, or any form
 - **Audio stimulus** — tap the microphone and map frequency bands to input neurons; the network will react to sound in real time
 - **Weight snapshots** — save and restore trained weight states
 - **Multiple layout modes** — circular layers, 3D grid, free-form scatter

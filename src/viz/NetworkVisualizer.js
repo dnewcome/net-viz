@@ -168,7 +168,7 @@ export class NetworkVisualizer {
     const mat = new THREE.MeshBasicMaterial({ color: 0xffffff });
 
     this.neuronMesh = new THREE.InstancedMesh(geo, mat, total);
-    this.neuronMesh.instanceMatrix.setUsage(THREE.StaticDrawUsage);
+    this.neuronMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     this.neuronMesh.frustumCulled = false;
 
     let idx = 0;
@@ -213,14 +213,91 @@ export class NetworkVisualizer {
       }
     }
 
+    const posAttr = new THREE.BufferAttribute(positions, 3);
+    posAttr.setUsage(THREE.DynamicDrawUsage);
+
     const geo = new THREE.BufferGeometry();
-    geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geo.setAttribute('position', posAttr);
     geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
 
     const mat = new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.75 });
     this.connectionLines = new THREE.LineSegments(geo, mat);
     this.connectionLines.frustumCulled = false;
     this.scene.add(this.connectionLines);
+  }
+
+  // ─── STL mesh overlay ────────────────────────────────────────────────────────
+
+  showSTLMesh(geometry) {
+    this.hideSTLMesh();
+    const mesh = new THREE.Mesh(
+      geometry,
+      new THREE.MeshBasicMaterial({
+        color: 0x1a3a5c,
+        transparent: true,
+        opacity: 0.07,
+        side: THREE.DoubleSide,
+      }),
+    );
+    const wire = new THREE.Mesh(
+      geometry,
+      new THREE.MeshBasicMaterial({
+        color: 0x002244,
+        wireframe: true,
+        transparent: true,
+        opacity: 0.04,
+      }),
+    );
+    mesh.frustumCulled = false;
+    wire.frustumCulled = false;
+    this._stlMeshes = [mesh, wire];
+    this.scene.add(mesh);
+    this.scene.add(wire);
+  }
+
+  hideSTLMesh() {
+    if (!this._stlMeshes) return;
+    for (const m of this._stlMeshes) {
+      this.scene.remove(m);
+      m.material.dispose(); // geometry is owned by STLLayout — do not dispose
+    }
+    this._stlMeshes = null;
+  }
+
+  // ─── Live position updates ───────────────────────────────────────────────────
+
+  /** Accept new neuron positions from the force simulation and sync GPU buffers. */
+  setPositions(positions) {
+    this.neuronPositions = positions;
+    this._syncPositionBuffers();
+  }
+
+  _syncPositionBuffers() {
+    if (!this.neuronMesh || !this.connectionLines) return;
+
+    // Update neuron instance matrices
+    let idx = 0;
+    for (let l = 0; l < this.neuronPositions.length; l++) {
+      for (let i = 0; i < this.neuronPositions[l].length; i++) {
+        _tmpObj.position.copy(this.neuronPositions[l][i]);
+        _tmpObj.scale.setScalar(1);
+        _tmpObj.updateMatrix();
+        this.neuronMesh.setMatrixAt(idx, _tmpObj.matrix);
+        idx++;
+      }
+    }
+    this.neuronMesh.instanceMatrix.needsUpdate = true;
+
+    // Update connection segment endpoints
+    const posArr = this.connectionLines.geometry.attributes.position.array;
+    for (let c = 0; c < this._connectionMap.length; c++) {
+      const { layer, from, to } = this._connectionMap[c];
+      const s = this.neuronPositions[layer][from];
+      const e = this.neuronPositions[layer + 1][to];
+      posArr[c * 6 + 0] = s.x; posArr[c * 6 + 1] = s.y; posArr[c * 6 + 2] = s.z;
+      posArr[c * 6 + 3] = e.x; posArr[c * 6 + 4] = e.y; posArr[c * 6 + 5] = e.z;
+    }
+    this.connectionLines.geometry.attributes.position.needsUpdate = true;
   }
 
   _positionCamera(network) {
